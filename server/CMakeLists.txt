@@ -29,3 +29,6 @@ target_link_libraries(qt_demo_httplib INTERFACE Threads::Threads)
 
 add_executable(qt_http_server src/main.cpp)
 target_link_libraries(qt_http_server PRIVATE qt_demo_httplib qt_demo_json)
+
+# 将无响应对端的关闭握手等待限制为 1 秒。
+target_compile_definitions(qt_http_server PRIVATE CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND=1)
