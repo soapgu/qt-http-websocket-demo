@@ -1,9 +1,16 @@
-#include <QCoreApplication>
-#include <QTextStream>
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include "NetworkController.h"
 
-int main(int argc, char *argv[])
-{
-    QCoreApplication app(argc, argv);
-    QTextStream(stdout) << "客户端构建骨架启动成功，界面和网络功能尚未实现。" << Qt::endl;
-    return 0;
+int main(int argc, char *argv[]) {
+    QGuiApplication app(argc, argv);
+    app.setQuitOnLastWindowClosed(false);
+    NetworkController controller;
+    QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty("network", &controller);
+    QObject::connect(&controller, &NetworkController::readyToQuit, &app, &QCoreApplication::quit, Qt::QueuedConnection);
+    QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
+    engine.loadFromModule("DemoClient", "Main");
+    return app.exec();
 }

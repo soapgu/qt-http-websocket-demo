@@ -6,9 +6,15 @@
 #include <csignal>
 #include <iostream>
 #include <thread>
+#include <mutex>
+#include <deque>
+#include <vector>
+#include <memory>
+#include <algorithm>
 
 namespace {
 volatile std::sig_atomic_t stop_requested = 0;
+struct Subscription { std::deque<std::string> messages; bool overflow = false; };
 void handle_signal(int) { stop_requested = 1; }
 }
 
@@ -19,6 +25,8 @@ int main()
     std::signal(SIGTERM, handle_signal);
     std::atomic<bool> stopping{false};
     std::atomic<bool> listener_finished{false};
+    std::mutex subscriptions_mutex;
+    std::vector<std::shared_ptr<Subscription>> subscriptions;
     httplib::Server server;
     server.set_read_timeout(2, 0);
     server.set_write_timeout(2, 0);
@@ -30,28 +38,62 @@ int main()
     server.Get("/api/status", [](const httplib::Request &, httplib::Response &response) {
         response.set_content(json{{"status", "ok"}}.dump(), "application/json");
     });
-    server.Post("/api/echo", [](const httplib::Request &request, httplib::Response &response) {
+    server.Post("/api/echo", [&](const httplib::Request &request, httplib::Response &response) {
         try {
             auto data = json::parse(request.body);
-            response.set_content(json{{"data", std::move(data)}}.dump(), "application/json");
+            const auto message = data.dump();
+            response.set_content(json{{"data", data}}.dump(), "application/json");
+            std::lock_guard<std::mutex> lock(subscriptions_mutex);
+            if (!stopping.load()) {
+                for (auto &subscriber : subscriptions) {
+                    if (subscriber->overflow) { continue; }
+                    if (subscriber->messages.size() >= 100) {
+                        subscriber->overflow = true;
+                    } else { subscriber->messages.push_back(message); }
+                }
+            }
         } catch (const json::exception &) {
             response.status = 400;
             response.set_content(json{{"error", "请求体必须是合法 JSON"}}.dump(), "application/json");
         }
     });
 
-    server.WebSocket("/ws", [&stopping](const httplib::Request &, httplib::ws::WebSocket &ws) {
-        ws.set_read_timeout(std::chrono::milliseconds(200));
-        std::string message;
-        while (!stopping.load()) {
-            const auto result = ws.read(message);
-            if (result == httplib::ws::ReadResult::Timeout) { continue; }
-            if (result == httplib::ws::ReadResult::Fail) { return; }
-            const bool sent = result == httplib::ws::ReadResult::Binary
-                ? ws.send(message.data(), message.size()) : ws.send(message);
-            if (!sent) { return; }
+    server.WebSocket("/ws", [&](const httplib::Request &, httplib::ws::WebSocket &ws) {
+        auto subscriber = std::make_shared<Subscription>();
+        {
+            std::lock_guard<std::mutex> lock(subscriptions_mutex);
+            subscriptions.push_back(subscriber);
         }
-        ws.close(httplib::ws::CloseStatus::GoingAway, "server shutting down");
+        ws.set_read_timeout(std::chrono::milliseconds(200));
+        bool overflow = false;
+        while (!stopping.load()) {
+            std::string outgoing;
+            bool pending = false;
+            {
+                std::lock_guard<std::mutex> lock(subscriptions_mutex);
+                overflow = subscriber->overflow;
+                if (!overflow && !subscriber->messages.empty()) {
+                    outgoing = std::move(subscriber->messages.front());
+                    subscriber->messages.pop_front();
+                    pending = true;
+                }
+            }
+            if (overflow) { break; }
+            if (pending) {
+                if (!ws.send(outgoing)) { break; }
+                continue;
+            }
+            std::string ignored;
+            if (ws.read(ignored) == httplib::ws::ReadResult::Fail) { break; }
+        }
+        {
+            std::lock_guard<std::mutex> lock(subscriptions_mutex);
+            subscriptions.erase(std::remove(subscriptions.begin(), subscriptions.end(), subscriber), subscriptions.end());
+        }
+        if (ws.is_open()) {
+            ws.close(httplib::ws::CloseStatus::GoingAway,
+                     overflow ? "subscriber queue full" : "server shutting down");
+        }
     });
 
     if (!server.bind_to_port("127.0.0.1", 8080)) {

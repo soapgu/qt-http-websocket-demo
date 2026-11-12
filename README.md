@@ -2,7 +2,7 @@
 
 演示 **cpp-httplib 服务端**与 **Qt 官方 HTTP、WebSocket 客户端**互通，为 Qt 程序内嵌轻量网络服务提供参考。
 
-> 当前阶段：服务端已实现 HTTP 状态查询与 JSON 回显，启动后持续监听。客户端仍为构建骨架；已支持同端口 WebSocket 回显及信号正常停止，客户端界面尚未实现。
+> 当前阶段：服务端已实现 HTTP 状态查询与 JSON 回显，启动后持续监听。客户端已提供 Qt Quick 调试窗口；已支持同端口 WebSocket 广播及信号正常停止，支持 HTTP 提交和 WS 订阅。
 
 ## 技术方案
 
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 服务端 | cpp-httplib | 提供 HTTP API 和 WebSocket 服务 |
 | HTTP 客户端 | Qt Network：`QNetworkAccessManager` | 查询状态、发送请求 |
-| WebSocket 客户端 | Qt WebSockets：`QWebSocket` | 双向消息通信 |
+| WebSocket 客户端 | Qt WebSockets：`QWebSocket` | 接收 HTTP 触发的广播 |
 | 构建工具 | CMake | 管理服务端与 Qt 客户端构建 |
 
 ```text
@@ -35,10 +35,11 @@ qt-http-websocket-demo/
 │   └── src/               # cpp-httplib 服务端实现
 └── client/
     ├── CMakeLists.txt      # 客户端构建配置
+    ├── Main.qml            # Qt Quick 调试窗口
     └── src/               # Qt HTTP / WebSocket 客户端实现
 ```
 
-已支持统一构建及按需选择客户端或服务端构建。子项目通过顶层工程配置，不支持直接单独配置子目录。网络功能实现后，运行时先启动服务端，再启动客户端连接。
+已支持统一构建及按需选择客户端或服务端构建。子项目通过顶层工程配置，不支持直接单独配置子目录。运行时先启动服务端，再启动客户端连接。
 
 - **服务端 `server/`**：负责监听端口、HTTP 路由和 WebSocket 连接处理，独立运行，不依赖 Qt。
 - **客户端 `client/`**：负责通过 Qt 官方模块发起 HTTP 请求、建立 WebSocket 连接并展示通信结果。
@@ -48,7 +49,7 @@ qt-http-websocket-demo/
 
 ## 构建与运行
 
-需要 CMake 3.21 及以上、支持 C++17 的编译器。构建客户端还需要 Qt 6.8.3 及以上版本的 Core 模块；目前不需要 Network、WebSockets；启用服务端时由 CMake 自动获取 cpp-httplib 和 nlohmann/json。
+需要 CMake 3.21 及以上、支持 C++17 的编译器。构建客户端还需要 Qt 6.8.3 及以上版本的 Core、Gui、Qml、Quick、QuickControls2、Network、WebSockets 模块；启用服务端时由 CMake 自动获取 cpp-httplib 和 nlohmann/json。
 
 以下命令在仓库根目录执行。将 `CMAKE_PREFIX_PATH` 替换为本机 Qt 安装前缀（例如 macOS 的 `/Users/guhui/Qt/6.8.3/macos`）。
 
@@ -81,7 +82,7 @@ cmake --build build-client --config Debug
 
 可执行程序统一输出到对应构建目录的 `bin/`，多配置生成器也使用该目录；Windows 下程序名带 `.exe` 后缀。两个开关同时为 `OFF` 时配置会明确报错。
 
-服务端启动后持续监听 `127.0.0.1:8080`，通过 Qt Creator 停止按钮或终端 Ctrl+C 终止。客户端仍输出骨架提示后退出，不连接服务器或显示界面。Ctrl+C（SIGINT）或 SIGTERM 会停止监听、关闭连接并等待线程回收；强制结束进程（如 SIGKILL）无法保证清理。
+服务端启动后持续监听 `127.0.0.1:8080`，通过 Qt Creator 停止按钮或终端 Ctrl+C 终止。客户端显示调试窗口，先连接 WebSocket，再提交 HTTP JSON。关闭窗口会取消请求并关闭连接，最多等待 2 秒。Ctrl+C（SIGINT）或 SIGTERM 会停止监听、关闭连接并等待线程回收；强制结束进程（如 SIGKILL）无法保证清理。
 
 ### 服务端依赖与离线构建
 
@@ -107,7 +108,7 @@ cmake --build build-offline
 Qt 官方提供 `Qt HTTP Server + Qt WebSockets` 服务端组合。本项目沿用前期讨论，选择 cpp-httplib 提供服务端，Qt 官方模块提供客户端，减少服务端与 Qt 的耦合。
 
 - cpp-httplib 使用 MIT 许可证，采用单头文件方式集成。
-- Qt 客户端仅需 Network 和 WebSockets 模块；不依赖 Qt HTTP Server。
+- Qt 客户端网络使用 Network 和 WebSockets，界面使用 Qt Quick；不依赖 Qt HTTP Server。
 - 前期项目使用 Qt 6.8.3，本 Demo 计划以该版本为基线；构建前需安装对应的 Network、WebSockets 模块。
 - 服务端固定使用 cpp-httplib v0.66.0，通过 FetchContent 下载并校验 SHA256，不跟随主分支。
 
@@ -119,7 +120,7 @@ Qt 官方提供 `Qt HTTP Server + Qt WebSockets` 服务端组合。本项目沿�
 | --- | --- | --- |
 | HTTP | `GET /api/status` | 已实现：200，`{"status":"ok"}` |
 | HTTP | `POST /api/echo` | 已实现：200，`{"data":请求JSON值}` |
-| WebSocket | `/ws` | 已实现：文本与二进制消息原样回显 |
+| WebSocket | `/ws` | 已实现：订阅 /api/echo 成功提交的 JSON 广播 |
 
 ### HTTP 调试
 
@@ -138,8 +139,11 @@ curl -i http://127.0.0.1:8080/api/echo --data-binary 'invalid'
 
 ### WebSocket 调试与停止
 
-连接 `ws://127.0.0.1:8080/ws`，发送文本（包括空文本、中文）或二进制消息，服务端按原类型、原内容回显，不做 JSON 包装。HTTP 接口在 WebSocket 连接保持期间仍可使用。
+连接 `ws://127.0.0.1:8080/ws` 后，只接收广播，不发送业务消息。每次 `/api/echo` 成功提交，所有当前订阅者都会收到请求 JSON 本身（文本帧），HTTP 仍返回 `{"data":请求JSON值}`。非法 JSON 不广播，无订阅者时 HTTP 仍成功，不缓存历史消息。WS 客户端发来的业务消息被忽略，协议控制帧正常处理。
 
+客户端 HTTP 区域支持状态查询和 JSON 提交，展示状态码、正文和错误；一次处理一个请求，超时 5 秒。WS 区域展示连接状态及广播日志（最多 500 条），连接超时 5 秒，不自动重连。多个客户端连接后，可通过任意窗口或 curl 提交来观察广播。
+
+每个订阅者队列上限 100 条，队列溢出时关闭慢连接，不影响 HTTP 和其他订阅者。不保证并发请求的广播顺序，停止时不保证排空队列。
 在服务端终端按 Ctrl+C，或向进程发送 SIGTERM，等待“服务已停止，连接与线程已回收”提示。停止期间 WebSocket 发送 GoingAway（1001）关闭帧；对端不回应关闭帧时最多等待 1 秒。每个连接每 200 毫秒检查停止状态，HTTP 读写和空闲连接超时为 2 秒。Qt Creator 若直接强制结束进程，无法保证执行正常停止流程。
 
 ## 线程与生命周期
@@ -154,11 +158,11 @@ curl -i http://127.0.0.1:8080/api/echo --data-binary 'invalid'
 - [x] **构建工程**：创建顶层 CMake 工程及 `server/`、`client/` 子项目，支持统一构建和按需选择构建。
 - [x] **服务端**：固定 cpp-httplib 版本并接入服务端 CMake 配置。
 - [x] **服务端**：实现 HTTP 状态与回显接口。
-- [x] **服务端**：实现同端口 WebSocket 回显。
+- [x] **服务端**：实现同端口 WebSocket 广播。
 - [x] **服务端**：实现停止监听、连接关闭与线程回收。
-- [ ] **客户端**：接入 Qt Network、Qt WebSockets 模块，实现 HTTP 请求与响应展示。
-- [ ] **客户端**：实现 WebSocket 连接、消息收发、断开及错误展示。
-- [ ] **客户端**：实现退出时的连接关闭与网络对象清理。
+- [x] **客户端**：接入 Qt Network、Qt WebSockets 模块，实现 HTTP 请求与响应展示。
+- [x] **客户端**：实现 WebSocket 连接、广播接收、断开及错误展示。
+- [x] **客户端**：实现退出时的连接关闭与网络对象清理。
 - [ ] **客户端与服务端联调**：验证 HTTP 请求、WebSocket 消息收发、断开和双方程序退出。
 - [ ] **文档**：分别补充客户端、服务端的实际构建与运行步骤，以及依赖许可证说明。
 

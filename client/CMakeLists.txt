@@ -1,4 +1,5 @@
-find_package(Qt6 6.8.3 REQUIRED COMPONENTS Core)
-
-add_executable(qt_http_client src/main.cpp)
-target_link_libraries(qt_http_client PRIVATE Qt6::Core)
+find_package(Qt6 6.8.3 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Network WebSockets)
+qt_standard_project_setup(REQUIRES 6.8)
+qt_add_executable(qt_http_client src/main.cpp src/NetworkController.cpp src/NetworkController.h)
+qt_add_qml_module(qt_http_client URI DemoClient VERSION 1.0 QML_FILES Main.qml)
+target_link_libraries(qt_http_client PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::WebSockets)
