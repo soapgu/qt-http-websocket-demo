@@ -2,7 +2,7 @@
 
 演示 **cpp-httplib 服务端**与 **Qt 官方 HTTP、WebSocket 客户端**互通，为 Qt 程序内嵌轻量网络服务提供参考。
 
-> 当前阶段：已完成客户端与服务端构建骨架。两个程序仅输出启动提示后退出；HTTP、WebSocket 和界面尚未实现，以下网络接口均为计划。
+> 当前阶段：服务端已实现 HTTP 状态查询与 JSON 回显，启动后持续监听。客户端仍为构建骨架；WebSocket 和界面尚未实现。
 
 ## 技术方案
 
@@ -48,7 +48,7 @@ qt-http-websocket-demo/
 
 ## 构建与运行
 
-需要 CMake 3.21 及以上、支持 C++17 的编译器。构建客户端还需要 Qt 6.8.3 及以上版本的 Core 模块；目前不需要 Network、WebSockets；启用服务端时由 CMake 自动获取 cpp-httplib。
+需要 CMake 3.21 及以上、支持 C++17 的编译器。构建客户端还需要 Qt 6.8.3 及以上版本的 Core 模块；目前不需要 Network、WebSockets；启用服务端时由 CMake 自动获取 cpp-httplib 和 nlohmann/json。
 
 以下命令在仓库根目录执行。将 `CMAKE_PREFIX_PATH` 替换为本机 Qt 安装前缀（例如 macOS 的 `/Users/guhui/Qt/6.8.3/macos`）。
 
@@ -58,6 +58,7 @@ qt-http-websocket-demo/
 cmake -S . -B build -DCMAKE_PREFIX_PATH="/你的/Qt/安装前缀"
 cmake --build build --config Debug
 ./build/bin/qt_http_server
+# 在另一个终端运行客户端
 ./build/bin/qt_http_client
 ```
 
@@ -80,11 +81,13 @@ cmake --build build-client --config Debug
 
 可执行程序统一输出到对应构建目录的 `bin/`，多配置生成器也使用该目录；Windows 下程序名带 `.exe` 后缀。两个开关同时为 `OFF` 时配置会明确报错。
 
-当前两个程序启动后输出骨架提示并正常退出，不会监听端口、连接服务器或显示界面。
+服务端启动后持续监听 `127.0.0.1:8080`，通过 Qt Creator 停止按钮或终端 Ctrl+C 终止。客户端仍输出骨架提示后退出，不连接服务器或显示界面。优雅退出将在后续实现。
 
 ### 服务端依赖与离线构建
 
 服务端使用 [cpp-httplib v0.66.0](https://github.com/yhirose/cpp-httplib/tree/v0.66.0)，遵循 [MIT 许可证](https://github.com/yhirose/cpp-httplib/blob/v0.66.0/LICENSE)。归档 SHA256 为 `537a77cdb96d3b4ad64d0b7103971de52eac75cd4ee03a2fdb84417b0d742459`。
+
+JSON 解析使用 [nlohmann/json v3.11.3](https://github.com/nlohmann/json/tree/v3.11.3)，遵循 [MIT 许可证](https://github.com/nlohmann/json/blob/v3.11.3/LICENSE.MIT)，使用上游发布的 `json.tar.xz` 归档，SHA256 为 `d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d`，不加载上游构建工程。
 
 首次配置服务端需要联网下载；后续配置复用同一构建目录中的下载缓存。仅构建客户端不会下载或配置该依赖。当前仅使用头文件与系统线程库，不加载上游 CMake 工程，不启用 TLS、压缩、示例、测试或安装功能。
 
@@ -92,7 +95,8 @@ cmake --build build-client --config Debug
 
 ```bash
 cmake -S . -B build-offline -DBUILD_CLIENT=OFF \
-  -DFETCHCONTENT_SOURCE_DIR_CPP_HTTPLIB="/本地/cpp-httplib-0.66.0"
+  -DFETCHCONTENT_SOURCE_DIR_CPP_HTTPLIB="/本地/cpp-httplib-0.66.0" \
+  -DFETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON="/本地/json-3.11.3"
 cmake --build build-offline
 ```
 
@@ -107,15 +111,30 @@ Qt 官方提供 `Qt HTTP Server + Qt WebSockets` 服务端组合。本项目沿�
 - 前期项目使用 Qt 6.8.3，本 Demo 计划以该版本为基线；构建前需安装对应的 Network、WebSockets 模块。
 - 服务端固定使用 cpp-httplib v0.66.0，通过 FetchContent 下载并校验 SHA256，不跟随主分支。
 
-## 计划演示的接口
+## 接口
 
-默认监听地址计划为 `127.0.0.1:8080`，用于本机调试。
+固定监听地址为 `127.0.0.1:8080`，用于本机调试。
 
-| 协议 | 地址 | 计划行为 |
+| 协议 | 地址 | 行为 |
 | --- | --- | --- |
-| HTTP | `GET /api/status` | 返回 JSON 服务状态 |
-| HTTP | `POST /api/echo` | 回显请求内容 |
-| WebSocket | `/ws` | 接收文本并回显，验证双向通信 |
+| HTTP | `GET /api/status` | 已实现：200，`{"status":"ok"}` |
+| HTTP | `POST /api/echo` | 已实现：200，`{"data":请求JSON值}` |
+| WebSocket | `/ws` | 待实现：接收文本并回显 |
+
+### HTTP 调试
+
+先启动服务端，再在另一个终端执行：
+
+```bash
+curl -i http://127.0.0.1:8080/api/status
+curl -i http://127.0.0.1:8080/api/echo \
+  -H 'Content-Type: application/json' --data-binary '{"message":"你好"}'
+curl -i http://127.0.0.1:8080/api/echo --data-binary 'invalid'
+```
+
+成功响应的 Content-Type 为 `application/json`。回显接受所有 JSON 值（对象、数组、字符串、数字、布尔值和 null），保留值的含义，不保留原始排版。不强制校验请求 Content-Type。
+
+空请求体、非法 JSON 或非法 UTF-8 返回 HTTP 400 和 `{"error":"请求体必须是合法 JSON"}`。端口被占用时，服务端输出绑定失败原因并以非零状态退出。
 
 ## 线程与生命周期
 
@@ -128,7 +147,7 @@ Qt 官方提供 `Qt HTTP Server + Qt WebSockets` 服务端组合。本项目沿�
 
 - [x] **构建工程**：创建顶层 CMake 工程及 `server/`、`client/` 子项目，支持统一构建和按需选择构建。
 - [x] **服务端**：固定 cpp-httplib 版本并接入服务端 CMake 配置。
-- [ ] **服务端**：实现 HTTP 状态与回显接口。
+- [x] **服务端**：实现 HTTP 状态与回显接口。
 - [ ] **服务端**：实现同端口 WebSocket 回显。
 - [ ] **服务端**：实现停止监听、连接关闭与线程回收。
 - [ ] **客户端**：接入 Qt Network、Qt WebSockets 模块，实现 HTTP 请求与响应展示。

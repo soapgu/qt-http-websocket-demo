@@ -12,10 +12,20 @@ FetchContent_Declare(cpp_httplib
 )
 FetchContent_MakeAvailable(cpp_httplib)
 
+FetchContent_Declare(nlohmann_json
+    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
+    SOURCE_SUBDIR qt_demo_unused_subdirectory
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
+add_library(qt_demo_json INTERFACE)
+target_include_directories(qt_demo_json SYSTEM INTERFACE "${nlohmann_json_SOURCE_DIR}/single_include")
+
 find_package(Threads REQUIRED)
 add_library(qt_demo_httplib INTERFACE)
 target_include_directories(qt_demo_httplib SYSTEM INTERFACE "${cpp_httplib_SOURCE_DIR}")
 target_link_libraries(qt_demo_httplib INTERFACE Threads::Threads)
 
 add_executable(qt_http_server src/main.cpp)
-target_link_libraries(qt_http_server PRIVATE qt_demo_httplib)
+target_link_libraries(qt_http_server PRIVATE qt_demo_httplib qt_demo_json)
