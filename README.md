@@ -48,7 +48,7 @@ qt-http-websocket-demo/
 
 ## 构建与运行
 
-需要 CMake 3.21 及以上、支持 C++17 的编译器。构建客户端还需要 Qt 6.8.3 及以上版本的 Core 模块；目前不需要 Network、WebSockets 或 cpp-httplib。
+需要 CMake 3.21 及以上、支持 C++17 的编译器。构建客户端还需要 Qt 6.8.3 及以上版本的 Core 模块；目前不需要 Network、WebSockets；启用服务端时由 CMake 自动获取 cpp-httplib。
 
 以下命令在仓库根目录执行。将 `CMAKE_PREFIX_PATH` 替换为本机 Qt 安装前缀（例如 macOS 的 `/Users/guhui/Qt/6.8.3/macos`）。
 
@@ -82,6 +82,22 @@ cmake --build build-client --config Debug
 
 当前两个程序启动后输出骨架提示并正常退出，不会监听端口、连接服务器或显示界面。
 
+### 服务端依赖与离线构建
+
+服务端使用 [cpp-httplib v0.66.0](https://github.com/yhirose/cpp-httplib/tree/v0.66.0)，遵循 [MIT 许可证](https://github.com/yhirose/cpp-httplib/blob/v0.66.0/LICENSE)。归档 SHA256 为 `537a77cdb96d3b4ad64d0b7103971de52eac75cd4ee03a2fdb84417b0d742459`。
+
+首次配置服务端需要联网下载；后续配置复用同一构建目录中的下载缓存。仅构建客户端不会下载或配置该依赖。当前仅使用头文件与系统线程库，不加载上游 CMake 工程，不启用 TLS、压缩、示例、测试或安装功能。
+
+如需离线构建，预先下载并解压同版本源码，再指定包含 `httplib.h` 的绝对目录：
+
+```bash
+cmake -S . -B build-offline -DBUILD_CLIENT=OFF \
+  -DFETCHCONTENT_SOURCE_DIR_CPP_HTTPLIB="/本地/cpp-httplib-0.66.0"
+cmake --build build-offline
+```
+
+本地源码覆盖不会执行归档摘要校验，请确保目录来自上述固定版本。下载或校验失败会由 CMake 报错，不自动切换版本或下载来源。
+
 ## 选型背景
 
 Qt 官方提供 `Qt HTTP Server + Qt WebSockets` 服务端组合。本项目沿用前期讨论，选择 cpp-httplib 提供服务端，Qt 官方模块提供客户端，减少服务端与 Qt 的耦合。
@@ -89,7 +105,7 @@ Qt 官方提供 `Qt HTTP Server + Qt WebSockets` 服务端组合。本项目沿�
 - cpp-httplib 使用 MIT 许可证，采用单头文件方式集成。
 - Qt 客户端仅需 Network 和 WebSockets 模块；不依赖 Qt HTTP Server。
 - 前期项目使用 Qt 6.8.3，本 Demo 计划以该版本为基线；构建前需安装对应的 Network、WebSockets 模块。
-- 第三方依赖的具体版本将在实现时固定，不直接跟随主分支。
+- 服务端固定使用 cpp-httplib v0.66.0，通过 FetchContent 下载并校验 SHA256，不跟随主分支。
 
 ## 计划演示的接口
 
@@ -111,7 +127,7 @@ Qt 官方提供 `Qt HTTP Server + Qt WebSockets` 服务端组合。本项目沿�
 ## 后续实现
 
 - [x] **构建工程**：创建顶层 CMake 工程及 `server/`、`client/` 子项目，支持统一构建和按需选择构建。
-- [ ] **服务端**：固定 cpp-httplib 版本并接入服务端 CMake 配置。
+- [x] **服务端**：固定 cpp-httplib 版本并接入服务端 CMake 配置。
 - [ ] **服务端**：实现 HTTP 状态与回显接口。
 - [ ] **服务端**：实现同端口 WebSocket 回显。
 - [ ] **服务端**：实现停止监听、连接关闭与线程回收。
