@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.21)
+project(demo_integration LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_AUTOMOC ON)
+find_package(Qt6 6.8.3 REQUIRED COMPONENTS Core Network WebSockets)
+add_executable(client_smoke client_smoke.cpp ../client/src/NetworkController.cpp ../client/src/NetworkController.h)
+target_include_directories(client_smoke PRIVATE ../client/src)
+target_link_libraries(client_smoke PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)

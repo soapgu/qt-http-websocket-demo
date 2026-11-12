@@ -163,8 +163,71 @@ curl -i http://127.0.0.1:8080/api/echo --data-binary 'invalid'
 - [x] **客户端**：接入 Qt Network、Qt WebSockets 模块，实现 HTTP 请求与响应展示。
 - [x] **客户端**：实现 WebSocket 连接、广播接收、断开及错误展示。
 - [x] **客户端**：实现退出时的连接关闭与网络对象清理。
-- [ ] **客户端与服务端联调**：验证 HTTP 请求、WebSocket 消息收发、断开和双方程序退出。
-- [ ] **文档**：分别补充客户端、服务端的实际构建与运行步骤，以及依赖许可证说明。
+- [x] **客户端与服务端联调**：验证 HTTP 提交、WS 广播接收、断开和双方程序退出。
+- [x] **文档**：分别补充客户端、服务端的实际构建与运行步骤，以及依赖许可证说明。
+
+## 联调与验收
+
+需要 Python 3（仅标准库）及已构建的服务端。测试固定使用本机 8080 端口，运行前请停止手动启动的服务端；脚本只清理自己启动的进程。
+
+```bash
+# 核心 HTTP / WS 检查
+python3 tests/integration.py --server "$PWD/build/bin/qt_http_server"
+
+# 同时验证真实客户端 C++ 网络控制对象（不依赖窗口操作）
+cmake -S tests -B build-tests -DCMAKE_PREFIX_PATH="/你的/Qt/安装前缀"
+cmake --build build-tests --config Debug
+python3 tests/integration.py --server "$PWD/build/bin/qt_http_server" \
+  --client-smoke "$PWD/build-tests/client_smoke"
+```
+
+Windows 请使用相应的 `.exe` 路径；多配置生成器的测试程序通常位于 `build-tests/Debug/`。测试覆盖无订阅者提交、多个订阅者广播、非法 JSON、禁止 WS 回显、重连、SIGINT/SIGTERM 停止和端口重新绑定；客户端检查包含 HTTP、错误正文、连接失败、超时及退出。信号测试面向 macOS/Linux。
+
+### 手动窗口验收
+
+1. 启动服务端，在两个终端分别启动客户端。
+2. 两个窗口分别点击“连接”，确认 WS 状态变为“已连接”。
+3. 任一窗口点击“查询状态”，应显示 HTTP 200 和 `{"status":"ok"}`。
+4. 在任一窗口提交 `{"message":"你好"}`，HTTP 响应为 `{"data":{"message":"你好"}}`，两个窗口的接收日志都显示请求 JSON。
+5. 提交非法 JSON，应显示 400 正文且无新广播；断开一个窗口后再次提交，另一个窗口仍收到广播。
+6. 关闭客户端窗口；服务端用 Ctrl+C 停止，其他客户端应显示断开。
+
+自动检查不等于视觉验收：QML 加载可通过启动检查确认，窗口布局、缩放和真实点击交互仍待人工检查。
+
+### Qt Creator 使用
+
+打开顶层 `CMakeLists.txt`，选择 Qt 6.8.3 对应 Kit，先点击锤子构建。运行目标选择 `qt_http_server` 后启动，再切换 `qt_http_client` 启动客户端。若提示找不到可执行文件，请先构建当前 Kit 的目录；命令行的 `build/` 与 Creator 的构建目录可能不同。
+
+### 下载代理及排障
+
+仅首次下载或重新配置依赖时需要网络，可在终端配置代理：
+
+```bash
+export http_proxy=http://127.0.0.1:7897
+export https_proxy=http://127.0.0.1:7897
+export no_proxy=127.0.0.1,localhost
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/你的/Qt/安装前缀"
+cmake --build build
+```
+
+Qt Creator 请在“项目 → 构建设置”的构建/配置环境中添加同样的变量。代理地址属于本机设置，不写死在工程中；客户端网络对象直接连接，不使用下载代理。
+
+- 找不到 `Qt6WebSockets`：通过 Qt 官方维护工具补装与 Kit 版本、架构相同的 WebSockets；不要混用其他 Qt 版本的模块。
+- 找不到 QML 模块或界面组件：确认 Kit 包含 Qt Declarative、Quick、Quick Controls，再重新配置。
+- 端口占用：停止已经运行的服务端，确认本机 8080 端口释放后再启动。
+- 客户端连接失败：先确认服务端已启动，HTTP 和 WS 地址分别使用 `http://` 与 `ws://`。
+
+## 依赖许可证
+
+| 依赖 | 版本 | 授权与来源 |
+| --- | --- | --- |
+| cpp-httplib | v0.66.0 | [MIT](https://github.com/yhirose/cpp-httplib/blob/v0.66.0/LICENSE) |
+| nlohmann/json | v3.11.3 | [MIT](https://github.com/nlohmann/json/blob/v3.11.3/LICENSE.MIT) |
+| Qt Core、Gui、Network | ≥ 6.8.3 | 商业或开源授权，见 [Qt 授权](https://doc.qt.io/qt-6.8/licensing.html) |
+| Qt Qml、Quick、Quick Controls | ≥ 6.8.3 | 商业或开源授权，见 [Qt Quick](https://doc.qt.io/qt-6.8/qtquick-index.html)、[Quick Controls](https://doc.qt.io/qt-6.8/qtquickcontrols-index.html) |
+| Qt WebSockets | ≥ 6.8.3 | 商业或开源授权，见 [模块授权](https://doc.qt.io/qt-6.8/qtwebsockets-index.html) |
+
+本机 Qt 6.8.3 的总许可证文件为 Qt 安装根目录下的 `Licenses/LICENSE`；本机所用模块公共头文件的 SPDX 声明包含商业、LGPLv3 和 GPL 许可选项。具体使用与分发应遵循所选许可证及随 Qt 提供的第三方许可；本项目不依赖 Qt HTTP Server，不为仓库自动选择许可证。
 
 ## 参考资料
 
