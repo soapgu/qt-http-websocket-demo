@@ -2,7 +2,7 @@
 
 演示 **cpp-httplib 服务端**与 **Qt 官方 HTTP、WebSocket 客户端**互通，为 Qt 程序内嵌轻量网络服务提供参考。
 
-> 当前阶段：方案与接口规划。尚未实现代码、构建配置或运行示例，以下接口均为计划。
+> 当前阶段：已完成客户端与服务端构建骨架。两个程序仅输出启动提示后退出；HTTP、WebSocket 和界面尚未实现，以下网络接口均为计划。
 
 ## 技术方案
 
@@ -22,7 +22,7 @@ QWebSocket            ←── WS ───→ cpp-httplib
 
 双方通过标准 HTTP / WebSocket 协议通信，无需使用相同的网络库。服务端可以独立运行，也可以在后续集成进 Qt 程序。
 
-## 项目结构（规划）
+## 项目结构
 
 采用一个仓库、一个顶层 CMake 工程，包含客户端与服务端两个子项目，分别生成独立的可执行程序。
 
@@ -38,13 +38,49 @@ qt-http-websocket-demo/
     └── src/               # Qt HTTP / WebSocket 客户端实现
 ```
 
-以上目录和构建文件尚未创建。后续支持统一构建，也支持按需选择客户端或服务端构建；运行时先启动服务端，再启动客户端连接。
+已支持统一构建及按需选择客户端或服务端构建。子项目通过顶层工程配置，不支持直接单独配置子目录。网络功能实现后，运行时先启动服务端，再启动客户端连接。
 
 - **服务端 `server/`**：负责监听端口、HTTP 路由和 WebSocket 连接处理，独立运行，不依赖 Qt。
 - **客户端 `client/`**：负责通过 Qt 官方模块发起 HTTP 请求、建立 WebSocket 连接并展示通信结果。
 - **顶层工程**：负责依赖管理、子项目选择与统一构建。
 
 若后续需要在现有 Qt 程序中内嵌服务，可将服务端核心逻辑封装成库，由 Qt 主程序启动，并保留独立服务端用于调试。
+
+## 构建与运行
+
+需要 CMake 3.21 及以上、支持 C++17 的编译器。构建客户端还需要 Qt 6.8.3 及以上版本的 Core 模块；目前不需要 Network、WebSockets 或 cpp-httplib。
+
+以下命令在仓库根目录执行。将 `CMAKE_PREFIX_PATH` 替换为本机 Qt 安装前缀（例如 macOS 的 `/Users/guhui/Qt/6.8.3/macos`）。
+
+统一构建（两个开关默认均为 `ON`）：
+
+```bash
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/你的/Qt/安装前缀"
+cmake --build build --config Debug
+./build/bin/qt_http_server
+./build/bin/qt_http_client
+```
+
+仅构建服务端（不查找或依赖 Qt）：
+
+```bash
+cmake -S . -B build-server -DBUILD_SERVER=ON -DBUILD_CLIENT=OFF
+cmake --build build-server --config Debug
+./build-server/bin/qt_http_server
+```
+
+仅构建客户端：
+
+```bash
+cmake -S . -B build-client -DBUILD_SERVER=OFF -DBUILD_CLIENT=ON \
+  -DCMAKE_PREFIX_PATH="/你的/Qt/安装前缀"
+cmake --build build-client --config Debug
+./build-client/bin/qt_http_client
+```
+
+可执行程序统一输出到对应构建目录的 `bin/`，多配置生成器也使用该目录；Windows 下程序名带 `.exe` 后缀。两个开关同时为 `OFF` 时配置会明确报错。
+
+当前两个程序启动后输出骨架提示并正常退出，不会监听端口、连接服务器或显示界面。
 
 ## 选型背景
 
@@ -74,7 +110,7 @@ Qt 官方提供 `Qt HTTP Server + Qt WebSockets` 服务端组合。本项目沿�
 
 ## 后续实现
 
-- [ ] **构建工程**：创建顶层 CMake 工程及 `server/`、`client/` 子项目，支持统一构建和按需选择构建。
+- [x] **构建工程**：创建顶层 CMake 工程及 `server/`、`client/` 子项目，支持统一构建和按需选择构建。
 - [ ] **服务端**：固定 cpp-httplib 版本并接入服务端 CMake 配置。
 - [ ] **服务端**：实现 HTTP 状态与回显接口。
 - [ ] **服务端**：实现同端口 WebSocket 回显。
